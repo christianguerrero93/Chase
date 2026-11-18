@@ -5,115 +5,52 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="robots" content="noindex, nofollow" />
   <meta name="theme-color" content="#0b1d3a" />
-  <title>Ledger · Expense Tracker</title>
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Ledger" />
+  <title>Ledger</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
-  <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+  <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js" defer></script>
+  <script src="/vendor/simplewebauthn-browser.min.js" defer></script>
+  <script type="module" src="/js/main.js"></script>
 </head>
 <body>
-  <!-- Login -->
+  <!-- Sign in -->
   <div id="login" class="login hidden">
     <form id="loginForm" class="login-card">
       <div class="logo">L</div>
       <h1>Ledger</h1>
-      <p class="muted">Your spending, sorted. Enter your password to unlock.</p>
+      <p class="muted">Your money, with a plan.</p>
+      <button type="button" class="btn primary block hidden" id="passkeyBtn">🔑 Sign in with passkey</button>
       <input id="pw" type="password" autocomplete="current-password" placeholder="Password" required />
-      <button class="btn primary block" type="submit">Unlock</button>
-      <p id="loginErr" class="error"></p>
+      <button class="btn block" type="submit">Unlock with password</button>
+      <p id="loginErr" class="error" role="alert"></p>
     </form>
   </div>
 
   <!-- App -->
   <div id="app" class="hidden">
-    <section class="hero">
-      <div class="hero-inner">
-        <nav class="topbar">
-          <div class="brand"><span class="logo sm">L</span> Ledger</div>
-          <div class="actions">
-            <button class="btn glass" id="syncBtn">↻ Sync</button>
-            <button class="btn glass" id="importBtn">⬆ Import CSV</button>
-            <button class="btn white" id="connectBtn">Connect Chase</button>
-            <button class="btn ghost-light" id="logoutBtn" title="Lock">🔒</button>
-            <input type="file" id="csvFile" accept=".csv,.CSV" multiple hidden />
-          </div>
-        </nav>
-
-        <div class="hero-main">
-          <div>
-            <div class="month-nav">
-              <button class="icon-btn" id="prevMonth" aria-label="Previous month">‹</button>
-              <span id="monthLabel"></span>
-              <button class="icon-btn" id="nextMonth" aria-label="Next month">›</button>
-            </div>
-            <div class="hero-label">Spent this month</div>
-            <div class="hero-amount" id="heroSpent">$0</div>
-            <div class="hero-sub" id="heroSub"></div>
-          </div>
-          <div class="hero-meter" id="heroMeter"></div>
+    <header class="appbar">
+      <div class="wrap appbar-inner">
+        <a class="brand" href="#/today"><span class="logo sm">L</span> Ledger</a>
+        <nav id="topnav" class="topnav" aria-label="Main"></nav>
+        <div class="appbar-actions">
+          <button class="icon-btn" data-action="sync" title="Sync now" aria-label="Sync now">↻</button>
+          <button class="icon-btn" data-action="lock" title="Lock" aria-label="Lock">🔒</button>
         </div>
-
-        <div class="kpis" id="kpis"></div>
       </div>
-    </section>
-
-    <main>
-      <div id="review" class="review hidden"></div>
-
-      <div class="grid">
-        <section class="card">
-          <div class="card-head"><h2>Where it went</h2><span class="muted small" id="donutNote"></span></div>
-          <div class="donut-wrap">
-            <div id="donut" class="donut"></div>
-            <div id="legend" class="legend"></div>
-          </div>
-        </section>
-
-        <section class="card">
-          <div class="card-head"><h2>6-month trend</h2><span class="muted small" id="avgNote"></span></div>
-          <div id="trend" class="trend"></div>
-          <div class="card-head mt"><h2>Top merchants</h2></div>
-          <div id="merchants"></div>
-        </section>
-      </div>
-
-      <section class="card">
-        <div class="card-head">
-          <h2>Budgets</h2>
-          <select id="addBudgetCat" class="small-select"><option value="">+ Add a budget</option></select>
-        </div>
-        <div id="categories" class="budgets"></div>
-      </section>
-
-      <section class="card">
-        <div class="card-head">
-          <h2>Transactions <span class="count" id="txnCount"></span></h2>
-          <div class="filters">
-            <input id="search" type="search" placeholder="Search merchants" />
-            <select id="catFilter"><option value="">All categories</option></select>
-          </div>
-        </div>
-        <div id="txnList" class="txn-list"></div>
-        <p id="txnEmpty" class="muted empty hidden">No transactions here yet. Connect Chase or import a CSV to get started.</p>
-      </section>
-
-      <div class="grid">
-        <section class="card">
-          <div class="card-head"><h2>Accounts</h2></div>
-          <div id="connections"></div>
-        </section>
-        <section class="card">
-          <div class="card-head"><h2>Your rules</h2></div>
-          <p class="muted small">Recategorize a purchase and tap “Always” to create a rule for that merchant.</p>
-          <div id="rules"></div>
-        </section>
-      </div>
-      <footer class="muted small">Categories come from a built-in directory of 870+ merchant names, your bank’s data, and your own rules.</footer>
-    </main>
+    </header>
+    <main id="view"></main>
+    <nav id="tabbar" class="tabbar" aria-label="Main"></nav>
   </div>
 
-  <div id="toast" class="toast hidden"></div>
-  <script src="/app.js"></script>
+  <div id="sheet" class="sheet hidden"></div>
+  <div id="toast" class="toast hidden" role="status"></div>
 </body>
 </html>

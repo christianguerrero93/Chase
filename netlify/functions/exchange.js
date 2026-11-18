@@ -1,5 +1,5 @@
 import { guard, json, load, save, plaidClient } from '../lib/core.js';
-import { syncAll } from '../lib/sync.js';
+import { syncAll, accountInfo } from '../lib/sync.js';
 
 // Called after you finish connecting a bank in Plaid Link.
 // Swaps the one-time public token for a permanent access token that is
@@ -15,7 +15,7 @@ export default guard(async (req) => {
   try {
     const res = await client.accountsGet({ access_token: data.access_token });
     for (const a of res.data.accounts) {
-      accounts[a.account_id] = { name: a.name, mask: a.mask, type: a.subtype || a.type };
+      accounts[a.account_id] = accountInfo(a);
     }
   } catch { /* accounts also arrive with the first sync */ }
 

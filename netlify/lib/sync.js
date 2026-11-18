@@ -1,4 +1,4 @@
-import { load, save, plaidClient } from './core.js';
+import { load, save, plaidClient, webhookUrl, localToday } from './core.js';
 import { autoCategory } from './categories.js';
 
 function normalize(t, itemId) {
@@ -23,8 +23,30 @@ function normalize(t, itemId) {
 
 // Pulls new / changed / removed transactions for every linked bank using
 // Plaid's cursor-based /transactions/sync, then saves them.
-export async function syncAll() {
+export function accountInfo(a) {
+  const debt = a.type === 'credit' || a.type === 'loan';
+  return {
+    name: a.official_name && a.name.length < 4 ? a.official_name : a.name,
+    mask: a.mask,
+    type: a.subtype || a.type,
+    group: a.type,
+    kind: debt ? 'debt' : 'asset',
+    balance: a.balances?.current ?? null,
+    available: a.balances?.available ?? null,
+    limit: a.balances?.limit ?? null,
+  };
+}
+
+export async function syncAll({ reason = 'manual' } = {}) {
+  // Skip if another sync started in the last 2 minutes (webhook + schedule overlap)
+  const lock = await load('sync-lock', null);
+  if (lock && Date.now() - lock.at < 120000 && reason !== 'manual') {
+    return { added: 0, modified: 0, removed: 0, errors: [], skipped: true };
+  }
+  await save('sync-lock', { at: Date.now(), reason });
+
   const client = plaidClient();
+  const hook = webhookUrl();
   const items = await load('items', {});
   const txns = await load('transactions', {});
   const summary = { added: 0, modified: 0, removed: 0, errors: [] };
@@ -49,7 +71,7 @@ export async function syncAll() {
         removed.push(...data.removed);
         for (const a of data.accounts || []) {
           item.accounts = item.accounts || {};
-          item.accounts[a.account_id] = { name: a.name, mask: a.mask, type: a.subtype || a.type };
+          item.accounts[a.account_id] = accountInfo(a);
         }
         cursor = data.next_cursor;
         hasMore = data.has_more;
@@ -70,6 +92,19 @@ export async function syncAll() {
 
     if (failed) continue;
 
+    // Fresh balances for net worth (and make sure Plaid knows where to send updates)
+    try {
+      const { data } = await client.accountsGet({ access_token: item.access_token });
+      item.accounts = item.accounts || {};
+      for (const a of data.accounts) item.accounts[a.account_id] = accountInfo(a);
+    } catch { /* balances are optional */ }
+    if (hook && item.webhook !== hook) {
+      try {
+        await client.itemWebhookUpdate({ access_token: item.access_token, webhook: hook });
+        item.webhook = hook;
+      } catch { /* retried next sync */ }
+    }
+
     for (const t of [...added, ...modified]) txns[t.transaction_id] = normalize(t, item.item_id);
     for (const r of removed) delete txns[r.transaction_id];
     summary.added += added.length;
@@ -82,5 +117,25 @@ export async function syncAll() {
 
   await save('transactions', txns);
   await save('items', items);
+  await snapshotNetWorth(items);
+  await save('sync-lock', null);
   return summary;
+}
+
+// One data point per day: total assets minus total debts across linked accounts
+async function snapshotNetWorth(items) {
+  let assets = 0, debts = 0, any = false;
+  for (const item of Object.values(items)) {
+    for (const a of Object.values(item.accounts || {})) {
+      if (typeof a.balance !== 'number') continue;
+      any = true;
+      if (a.kind === 'debt') debts += a.balance; else assets += a.balance;
+    }
+  }
+  if (!any) return;
+  const settings = await load('settings', {});
+  const date = localToday(settings.timezone || 'America/New_York');
+  const history = (await load('networth', [])).filter((p) => p.date !== date);
+  history.push({ date, assets: Math.round(assets * 100) / 100, debts: Math.round(debts * 100) / 100 });
+  await save('networth', history.slice(-1000));
 }

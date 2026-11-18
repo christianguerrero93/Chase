@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@netlify/blobs": "^11.1.9",
+    "@simplewebauthn/server": "^14.1.0",
     "plaid": "^51.0.0"
   }
 }

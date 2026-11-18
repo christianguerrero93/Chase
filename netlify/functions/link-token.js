@@ -1,4 +1,4 @@
-import { guard, json, load, plaidClient } from '../lib/core.js';
+import { guard, json, load, plaidClient, webhookUrl } from '../lib/core.js';
 
 // Creates a Plaid Link token. Pass { item_id } to re-authenticate an
 // existing connection (e.g. when Chase asks you to log in again).
@@ -13,6 +13,7 @@ export default guard(async (req) => {
     language: 'en',
   };
   if (process.env.PLAID_REDIRECT_URI) request.redirect_uri = process.env.PLAID_REDIRECT_URI;
+  if (webhookUrl()) request.webhook = webhookUrl();
 
   if (body.item_id) {
     const items = await load('items', {});
