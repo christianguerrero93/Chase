@@ -1,8 +1,11 @@
 import { load, save, plaidClient } from './core.js';
-import { categorizePlaid } from './categories.js';
+import { autoCategory } from './categories.js';
 
 function normalize(t, itemId) {
-  return {
+  const pfc = t.personal_finance_category
+    ? { primary: t.personal_finance_category.primary, detailed: t.personal_finance_category.detailed }
+    : null;
+  const out = {
     id: t.transaction_id,
     date: t.date,
     name: t.merchant_name || t.name,
@@ -10,10 +13,12 @@ function normalize(t, itemId) {
     amount: t.amount, // Plaid: positive = money out
     account: t.account_id,
     pending: !!t.pending,
-    auto: categorizePlaid(t.personal_finance_category),
+    pfc,
     source: 'plaid',
     item: itemId,
   };
+  out.auto = autoCategory(out);
+  return out;
 }
 
 // Pulls new / changed / removed transactions for every linked bank using

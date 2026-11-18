@@ -1,9 +1,25 @@
-/* Expense Tracker front end. No build step required. */
+/* Ledger: expense tracker front end. No build step required. */
 (() => {
   const $ = (id) => document.getElementById(id);
   const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
   const fmt0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
   const money = (n) => fmt.format(n);
+
+  // Color + icon for each category
+  const META = {
+    Groceries: ['#16a34a', '🛒'], Dining: ['#ea580c', '🍽️'], Coffee: ['#92400e', '☕'],
+    'Food Delivery': ['#f97316', '🛵'], Shopping: ['#db2777', '🛍️'], Clothing: ['#c026d3', '👟'],
+    Transportation: ['#0891b2', '🚇'], Gas: ['#475569', '⛽'], Travel: ['#0284c7', '✈️'],
+    Rent: ['#4f46e5', '🏠'], 'Bills & Utilities': ['#ca8a04', '💡'], 'Phone & Internet': ['#6366f1', '📶'],
+    Insurance: ['#64748b', '🛡️'], Subscriptions: ['#7c3aed', '🔁'], Entertainment: ['#e11d48', '🎟️'],
+    Fitness: ['#059669', '🏋️'], Health: ['#dc2626', '💊'], 'Personal Care': ['#ec4899', '💈'],
+    Home: ['#a16207', '🛋️'], Pets: ['#b45309', '🐾'], Education: ['#2563eb', '🎓'],
+    'Gifts & Donations': ['#be185d', '🎁'], 'Venmo & Zelle': ['#0ea5e9', '💸'], 'Cash & ATM': ['#15803d', '🏧'],
+    Fees: ['#b91c1c', '⚠️'], 'Debt Payments': ['#7f1d1d', '🏦'], Other: ['#94a3b8', '❔'],
+    Income: ['#059669', '💰'], Transfer: ['#64748b', '🔄'], 'Credit Card Payment': ['#334155', '💳'],
+  };
+  const color = (c) => (META[c] || META.Other)[0];
+  const icon = (c) => (META[c] || META.Other)[1];
 
   const state = {
     password: sessionStorage.getItem('et_pw') || '',
@@ -11,6 +27,7 @@
     month: ymNow(),
     search: '',
     filter: '',
+    limit: 60,
   };
 
   // ---------- utils ----------
@@ -26,6 +43,10 @@
   function monthName(ym, short = false) {
     const [y, m] = ym.split('-').map(Number);
     return new Date(y, m - 1, 1).toLocaleDateString('en-US', short ? { month: 'short' } : { month: 'long', year: 'numeric' });
+  }
+  function dayLabel(iso) {
+    const [y, m, d] = iso.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   }
   function esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -59,11 +80,11 @@
   const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body) });
 
   async function busy(btn, fn) {
-    const label = btn.textContent;
+    const label = btn.innerHTML;
     btn.disabled = true; btn.textContent = '…';
     try { return await fn(); }
     catch (e) { toast(e.message); }
-    finally { btn.disabled = false; btn.textContent = label; }
+    finally { btn.disabled = false; btn.innerHTML = label; }
   }
 
   // ---------- categorization ----------
@@ -75,104 +96,149 @@
     return rule ? rule.category : t.auto;
   }
   const isSpending = (cat) => !state.data.nonSpending.includes(cat);
-
-  function monthTxns(ym) {
-    return state.data.transactions.filter((t) => t.date.startsWith(ym));
-  }
+  const monthTxns = (ym) => state.data.transactions.filter((t) => t.date.startsWith(ym));
   function spentIn(ym, throughDay = 31) {
     return monthTxns(ym).reduce((sum, t) =>
       (isSpending(categoryOf(t)) && Number(t.date.slice(8, 10)) <= throughDay ? sum + t.amount : sum), 0);
+  }
+  function categoryTotals(ym) {
+    const totals = {};
+    for (const t of monthTxns(ym)) {
+      const c = categoryOf(t);
+      if (isSpending(c)) totals[c] = (totals[c] || 0) + t.amount;
+    }
+    return totals;
   }
 
   // ---------- render ----------
   function render() {
     $('monthLabel').textContent = monthName(state.month);
     $('nextMonth').disabled = state.month >= ymNow();
-    renderKpis();
-    renderCategories();
+    renderHero();
+    renderReview();
+    renderDonut();
     renderTrend();
     renderMerchants();
+    renderBudgets();
     renderTxns();
     renderConnections();
     renderRules();
   }
 
-  function renderKpis() {
+  function renderHero() {
     const txns = monthTxns(state.month);
     const spent = spentIn(state.month);
-    // Current month is partial, so compare against the same point last month
     const isCurrent = state.month === ymNow();
     const today = new Date().getDate();
-    const prev = spentIn(shiftMonth(state.month, -1), isCurrent ? today : 31);
-    const prevLabel = `${isCurrent ? 'same point in ' : ''}${monthName(shiftMonth(state.month, -1), true)}`;
+    const prevYm = shiftMonth(state.month, -1);
+    const prev = spentIn(prevYm, isCurrent ? today : 31);
     const income = txns.reduce((s, t) => (categoryOf(t) === 'Income' ? s - t.amount : s), 0);
     const budgets = state.data.settings.budgets;
     const totalBudget = Object.values(budgets).reduce((a, b) => a + b, 0);
     const remaining = totalBudget - spent;
     const change = prev > 0 ? ((spent - prev) / prev) * 100 : null;
+    const purchases = txns.filter((t) => t.amount > 0 && isSpending(categoryOf(t))).length;
 
-    // Pace: how far through the month we are vs how much budget is used
-    let paceText = '';
-    if (state.month === ymNow() && totalBudget > 0) {
-      const d = new Date();
-      const days = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-      const pctMonth = Math.round((d.getDate() / days) * 100);
-      const pctBudget = Math.round((spent / totalBudget) * 100);
-      paceText = `${pctBudget}% of budget used, ${pctMonth}% of month gone`;
+    $('heroSpent').textContent = fmt0.format(spent);
+    $('heroSub').innerHTML = change === null
+      ? `${purchases} purchases`
+      : `<span class="pill ${change > 0 ? 'bad' : 'good'}">${change > 0 ? '▲' : '▼'} ${Math.abs(change).toFixed(0)}%</span>
+         vs ${isCurrent ? 'same point in ' : ''}${monthName(prevYm, true)} · ${purchases} purchases`;
+
+    // Budget ring
+    if (totalBudget > 0) {
+      const pct = Math.max(0, spent / totalBudget);
+      const r = 64, circ = 2 * Math.PI * r;
+      const stroke = pct > 1 ? '#f87171' : pct > 0.85 ? '#fbbf24' : '#60a5fa';
+      let pace = '';
+      if (isCurrent) {
+        const d = new Date();
+        const days = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+        pace = ` · ${Math.round((d.getDate() / days) * 100)}% of month gone`;
+      }
+      $('heroMeter').innerHTML = `
+        <svg width="150" height="150" viewBox="0 0 150 150">
+          <circle cx="75" cy="75" r="${r}" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="12"/>
+          <circle cx="75" cy="75" r="${r}" fill="none" stroke="${stroke}" stroke-width="12" stroke-linecap="round"
+            stroke-dasharray="${Math.min(pct, 1) * circ} ${circ}" transform="rotate(-90 75 75)"/>
+          <text x="75" y="72" text-anchor="middle" fill="#fff" font-size="26" font-weight="800">${Math.round(pct * 100)}%</text>
+          <text x="75" y="94" text-anchor="middle" fill="rgba(255,255,255,.75)" font-size="12">of budget</text>
+        </svg>
+        <div class="lbl">${fmt0.format(totalBudget)} budget${pace}</div>`;
+    } else {
+      $('heroMeter').innerHTML = '';
     }
 
+    const avgDay = isCurrent ? spent / Math.max(today, 1) : spent / new Date(...state.month.split('-').map(Number), 0).getDate();
     $('kpis').innerHTML = `
-      <div class="kpi"><div class="label">Spent</div><div class="value">${fmt0.format(spent)}</div>
-        <div class="sub">${change === null ? 'No prior month data' : `<span class="${change > 0 ? 'up' : 'down'}">${change > 0 ? '▲' : '▼'} ${Math.abs(change).toFixed(0)}%</span> vs ${prevLabel}`}</div></div>
-      <div class="kpi"><div class="label">Budget</div><div class="value">${totalBudget ? fmt0.format(totalBudget) : '—'}</div>
-        <div class="sub">${totalBudget ? paceText || `${Object.keys(budgets).length} categories` : 'Set budgets below'}</div></div>
-      <div class="kpi"><div class="label">${remaining >= 0 ? 'Remaining' : 'Over budget'}</div>
-        <div class="value ${remaining < 0 ? 'up' : ''}">${totalBudget ? fmt0.format(Math.abs(remaining)) : '—'}</div>
-        <div class="sub">${totalBudget ? `${Math.max(0, Math.round((remaining / totalBudget) * 100))}% left` : ''}</div></div>
+      <div class="kpi"><div class="label">${remaining >= 0 ? 'Left to spend' : 'Over budget'}</div>
+        <div class="value">${totalBudget ? fmt0.format(Math.abs(remaining)) : '—'}</div>
+        <div class="sub">${totalBudget ? `of ${fmt0.format(totalBudget)}` : 'Set budgets below'}</div></div>
       <div class="kpi"><div class="label">Income</div><div class="value">${fmt0.format(income)}</div>
-        <div class="sub">${income > 0 ? `Net ${income - spent >= 0 ? '+' : '−'}${fmt0.format(Math.abs(income - spent))}` : 'Deposits this month'}</div></div>`;
+        <div class="sub">${income > 0 ? `Net ${income - spent >= 0 ? '+' : '-'}${fmt0.format(Math.abs(income - spent))}` : 'Deposits this month'}</div></div>
+      <div class="kpi"><div class="label">Daily average</div><div class="value">${fmt0.format(avgDay)}</div>
+        <div class="sub">${isCurrent ? `over ${today} days so far` : 'per day'}</div></div>
+      <div class="kpi"><div class="label">Biggest category</div>${(() => {
+        const top = Object.entries(categoryTotals(state.month)).sort((a, b) => b[1] - a[1])[0];
+        return top ? `<div class="value">${icon(top[0])} ${fmt0.format(top[1])}</div><div class="sub">${esc(top[0])}</div>`
+                   : '<div class="value">—</div><div class="sub">No spending yet</div>';
+      })()}</div>`;
   }
 
-  function renderCategories() {
-    const budgets = state.data.settings.budgets;
-    const totals = {};
-    for (const t of monthTxns(state.month)) {
-      const c = categoryOf(t);
-      if (isSpending(c)) totals[c] = (totals[c] || 0) + t.amount;
-    }
-    const cats = state.data.categories.filter((c) => isSpending(c) && ((totals[c] || 0) !== 0 || budgets[c]));
-    cats.sort((a, b) => (totals[b] || 0) - (totals[a] || 0));
+  function renderReview() {
+    const others = monthTxns(state.month).filter((t) => categoryOf(t) === 'Other');
+    const el = $('review');
+    if (!others.length) { el.classList.add('hidden'); return; }
+    const sum = others.reduce((s, t) => s + Math.max(t.amount, 0), 0);
+    el.innerHTML = `<div class="icon">🧐</div>
+      <div class="txt"><strong>${others.length} purchase${others.length > 1 ? 's' : ''} need a category</strong>
+        ${money(sum)} is sitting in Other. Sort them once and tap “Always” so they’re automatic next time.</div>
+      <button class="btn" id="reviewBtn">Review</button>`;
+    el.classList.remove('hidden');
+    $('reviewBtn').onclick = () => {
+      state.filter = 'Other'; $('catFilter').value = 'Other'; renderTxns();
+      $('txnList').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+  }
 
-    $('categories').innerHTML = cats.length
-      ? cats.map((c) => {
-          const spent = totals[c] || 0;
-          const budget = budgets[c] || 0;
-          const pct = budget ? Math.min(100, (spent / budget) * 100) : 0;
-          const cls = budget && spent > budget ? 'over' : budget && spent > budget * 0.85 ? 'warn' : '';
-          const meta = budget
-            ? spent > budget ? `${money(spent - budget)} over` : `${money(budget - spent)} left`
-            : 'No budget set';
-          return `<div class="cat-row">
-            <div class="cat-name">${esc(c)}</div>
-            <div class="cat-amt">${money(spent)} / <input type="number" min="0" step="10" data-budget="${esc(c)}" value="${budget || ''}" placeholder="budget" /></div>
-            <div class="bar ${cls}"><span style="width:${budget ? pct : 0}%"></span></div>
-            <div class="cat-meta">${meta}</div>
-          </div>`;
-        }).join('')
-      : '<p class="muted">Nothing spent this month yet.</p>';
+  function renderDonut() {
+    const entries = Object.entries(categoryTotals(state.month)).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+    const total = entries.reduce((s, [, v]) => s + v, 0);
+    // Keep the chart readable: top 7, then "Everything else"
+    const shown = entries.slice(0, 7);
+    const rest = entries.slice(7).reduce((s, [, v]) => s + v, 0);
+    if (rest > 0) shown.push(['Everything else', rest]);
 
-    const sel = $('addBudgetCat');
-    sel.innerHTML = '<option value="">+ Add budget</option>' +
-      state.data.categories.filter((c) => isSpending(c) && !cats.includes(c))
-        .map((c) => `<option>${esc(c)}</option>`).join('');
+    const r = 80, circ = 2 * Math.PI * r;
+    let offset = 0;
+    const segs = total ? shown.map(([c, v]) => {
+      const len = (v / total) * circ;
+      const gap = shown.length > 1 ? 2 : 0;
+      const seg = `<circle class="seg" data-cat="${esc(c)}" cx="100" cy="100" r="${r}" fill="none" stroke="${c === 'Everything else' ? '#cbd5e1' : color(c)}"
+        stroke-width="24" stroke-dasharray="${Math.max(len - gap, 0)} ${circ}" stroke-dashoffset="${-offset}"><title>${esc(c)}: ${money(v)}</title></circle>`;
+      offset += len;
+      return seg;
+    }).join('') : `<circle cx="100" cy="100" r="${r}" fill="none" stroke="var(--line)" stroke-width="24"/>`;
+
+    $('donut').innerHTML = `<svg width="200" height="200" viewBox="0 0 200 200">${segs}</svg>
+      <div class="center"><b>${fmt0.format(total)}</b><span>${entries.length} categories</span></div>`;
+    $('legend').innerHTML = shown.length
+      ? shown.map(([c, v]) => `<div class="legend-row" data-cat="${esc(c)}">
+          <span class="dot" style="--c:${c === 'Everything else' ? '#cbd5e1' : color(c)}"></span>
+          <span class="name">${c === 'Everything else' ? '' : icon(c) + ' '}${esc(c)}</span>
+          <span class="pct">${Math.round((v / total) * 100)}%</span><span class="amt">${fmt0.format(v)}</span></div>`).join('')
+      : '<p class="muted">No spending this month yet.</p>';
+    $('donutNote').textContent = 'Tap a category to filter';
   }
 
   function renderTrend() {
     const months = [-5, -4, -3, -2, -1, 0].map((d) => shiftMonth(state.month, d));
-    const vals = months.map(spentIn);
+    const vals = months.map((m) => spentIn(m));
     const max = Math.max(...vals, 1);
+    const prior = vals.slice(0, 5).filter((v) => v > 0);
+    $('avgNote').textContent = prior.length ? `Avg ${fmt0.format(prior.reduce((a, b) => a + b, 0) / prior.length)}/mo` : '';
     $('trend').innerHTML = months.map((m, i) => `
-      <div class="col ${m === state.month ? 'active' : ''}" title="${monthName(m)}: ${money(vals[i])}">
+      <div class="col ${m === state.month ? 'active' : ''}" data-month="${m}" title="${monthName(m)}: ${money(vals[i])}">
         <div class="v">${vals[i] ? fmt0.format(vals[i]) : ''}</div>
         <div class="b" style="height:${(Math.max(vals[i], 0) / max) * 100}%"></div>
         <div class="m">${monthName(m, true)}</div>
@@ -182,12 +248,49 @@
   function renderMerchants() {
     const totals = {};
     for (const t of monthTxns(state.month)) {
-      if (isSpending(categoryOf(t)) && t.amount > 0) totals[t.name] = (totals[t.name] || 0) + t.amount;
+      const c = categoryOf(t);
+      if (isSpending(c) && t.amount > 0) {
+        totals[t.name] = totals[t.name] || { v: 0, n: 0, c };
+        totals[t.name].v += t.amount; totals[t.name].n++;
+      }
     }
-    const top = Object.entries(totals).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    const top = Object.entries(totals).sort((a, b) => b[1].v - a[1].v).slice(0, 5);
     $('merchants').innerHTML = top.length
-      ? top.map(([n, v]) => `<div class="merchant"><span>${esc(n)}</span><span>${money(v)}</span></div>`).join('')
-      : '<p class="muted">—</p>';
+      ? top.map(([n, o]) => `<div class="merchant"><span class="chip" style="--c:${color(o.c)}">${icon(o.c)}</span>
+          <span class="name">${esc(n)} <span class="muted small">× ${o.n}</span></span><span class="amt">${money(o.v)}</span></div>`).join('')
+      : '<p class="muted">Nothing yet.</p>';
+  }
+
+  function renderBudgets() {
+    const budgets = state.data.settings.budgets;
+    const totals = categoryTotals(state.month);
+    const cats = state.data.categories.filter((c) => isSpending(c) && (totals[c] > 0 || budgets[c]));
+    cats.sort((a, b) => (budgets[b] ? 1 : 0) - (budgets[a] ? 1 : 0) || (totals[b] || 0) - (totals[a] || 0));
+
+    $('categories').innerHTML = cats.length
+      ? cats.map((c) => {
+          const spent = totals[c] || 0;
+          const budget = budgets[c] || 0;
+          const pct = budget ? Math.min(100, (spent / budget) * 100) : 0;
+          const cls = budget && spent > budget ? 'over' : budget && spent > budget * 0.85 ? 'warn' : '';
+          const status = budget
+            ? spent > budget ? `${money(spent - budget)} over budget` : `${money(budget - spent)} left · ${Math.round(pct)}% used`
+            : 'No budget yet';
+          return `<div class="budget" style="--c:${cls === 'over' ? 'var(--bad)' : cls === 'warn' ? 'var(--warn)' : color(c)}">
+            <span class="chip" style="--c:${color(c)}">${icon(c)}</span>
+            <div class="body">
+              <div class="row"><span class="name">${esc(c)}</span><span class="spent">${money(spent)}</span></div>
+              <div class="bar"><span style="width:${budget ? pct : 0}%"></span></div>
+              <div class="row"><span class="status ${cls}">${status}</span>
+                <span class="of">of $<input type="number" min="0" step="10" data-budget="${esc(c)}" value="${budget || ''}" placeholder="set" /></span></div>
+            </div>
+          </div>`;
+        }).join('')
+      : '<p class="muted">Nothing spent this month yet.</p>';
+
+    $('addBudgetCat').innerHTML = '<option value="">+ Add a budget</option>' +
+      state.data.categories.filter((c) => isSpending(c) && !cats.includes(c))
+        .map((c) => `<option value="${esc(c)}">${icon(c)} ${esc(c)}</option>`).join('');
   }
 
   function accountLabel(t) {
@@ -202,19 +305,36 @@
       .map((t) => ({ t, c: categoryOf(t) }))
       .filter(({ t, c }) => (!state.filter || c === state.filter) &&
         (!q || `${t.name} ${t.description}`.toLowerCase().includes(q)))
-      .sort((a, b) => b.t.date.localeCompare(a.t.date));
+      .sort((a, b) => b.t.date.localeCompare(a.t.date) || b.t.amount - a.t.amount);
 
-    const options = state.data.categories.map((c) => `<option>${esc(c)}</option>`).join('');
-    $('txnBody').innerHTML = rows.map(({ t, c }) => `
-      <tr>
-        <td>${t.date.slice(5).replace('-', '/')}</td>
-        <td><div>${esc(t.name)}${t.pending ? '<span class="tag">pending</span>' : ''}</div>
-            ${t.description && t.description !== t.name ? `<div class="desc">${esc(t.description)}</div>` : ''}</td>
-        <td class="muted">${esc(accountLabel(t))}</td>
-        <td><select data-txn="${esc(t.id)}">${options.replace(`<option>${esc(c)}</option>`, `<option selected>${esc(c)}</option>`)}</select></td>
-        <td class="num ${t.amount < 0 ? 'inflow' : ''}">${t.amount < 0 ? '+' : ''}${money(Math.abs(t.amount))}</td>
-      </tr>`).join('');
+    const total = rows.reduce((s, { t, c }) => s + (isSpending(c) ? t.amount : 0), 0);
+    $('txnCount').textContent = rows.length ? `· ${rows.length}${state.filter || q ? ` · ${money(total)}` : ''}` : '';
+
+    const options = state.data.categories.map((c) => `<option value="${esc(c)}">${icon(c)} ${esc(c)}</option>`).join('');
+    let html = '', lastDay = '';
+    const visible = rows.slice(0, state.limit);
+    for (const { t, c } of visible) {
+      if (t.date !== lastDay) {
+        const dayTotal = rows.filter((r) => r.t.date === t.date && isSpending(r.c)).reduce((s, r) => s + r.t.amount, 0);
+        html += `<div class="day"><span>${dayLabel(t.date)}</span><span>${dayTotal > 0 ? money(dayTotal) : ''}</span></div>`;
+        lastDay = t.date;
+      }
+      const sel = options.replace(`value="${esc(c)}"`, `value="${esc(c)}" selected`);
+      html += `<div class="txn">
+        <span class="chip" style="--c:${color(c)}">${icon(c)}</span>
+        <div class="info">
+          <div class="merch">${esc(t.name)}${t.pending ? '<span class="tag">pending</span>' : ''}</div>
+          <div class="meta">${esc(accountLabel(t))}${t.source !== 'csv' && t.description && t.description !== t.name ? ' · ' + esc(t.description) : ''}</div>
+        </div>
+        <select class="cat ${c === 'Other' ? 'other' : ''}" style="--c:${color(c)}" data-txn="${esc(t.id)}" aria-label="Category">${sel}</select>
+        <div class="amt ${t.amount < 0 ? 'in' : ''}">${t.amount < 0 ? '+' : ''}${money(Math.abs(t.amount))}</div>
+      </div>`;
+    }
+    if (rows.length > state.limit) html += `<button class="btn more" id="moreBtn">Show ${Math.min(60, rows.length - state.limit)} more</button>`;
+    $('txnList').innerHTML = html;
     $('txnEmpty').classList.toggle('hidden', rows.length > 0);
+    const more = $('moreBtn');
+    if (more) more.onclick = () => { state.limit += 60; renderTxns(); };
   }
 
   function renderConnections() {
@@ -223,7 +343,7 @@
     let html = conns.map((c) => `
       <div class="conn">
         <div>
-          <div><strong>${esc(c.institution)}</strong> <span class="muted small">${c.accounts.map((a) => esc(`${a.name} ••${a.mask || ''}`)).join(', ')}</span></div>
+          <div><strong>🏦 ${esc(c.institution)}</strong> <span class="muted small">${c.accounts.map((a) => esc(`${a.name} ••${a.mask || ''}`)).join(', ')}</span></div>
           <div class="muted small">${c.last_sync ? 'Synced ' + new Date(c.last_sync).toLocaleString() : 'Not synced yet'}</div>
           ${c.error ? `<div class="err">${esc(c.error)}${c.error === 'ITEM_LOGIN_REQUIRED' ? ' (Chase needs you to log in again)' : ''}</div>` : ''}
         </div>
@@ -232,18 +352,20 @@
           <button class="link-btn danger" data-remove="${esc(c.item_id)}">Remove</button>
         </div>
       </div>`).join('');
-    html += csvAccounts.map((a) => `
-      <div class="conn">
-        <div><strong>${esc(a)}</strong> <span class="muted small">CSV import</span></div>
-        <button class="link-btn danger" data-delcsv="${esc(a)}">Delete imported</button>
-      </div>`).join('');
+    html += csvAccounts.map((a) => {
+      const n = state.data.transactions.filter((t) => t.account === a).length;
+      return `<div class="conn">
+        <div><strong>📄 ${esc(a)}</strong> <span class="muted small">CSV import · ${n} transactions</span></div>
+        <button class="link-btn danger" data-delcsv="${esc(a)}">Delete</button>
+      </div>`;
+    }).join('');
     $('connections').innerHTML = html || '<p class="muted">No accounts yet. Tap “Connect Chase” or import a Chase CSV.</p>';
   }
 
   function renderRules() {
     const rules = state.data.settings.rules;
     $('rules').innerHTML = rules.length
-      ? rules.map((r, i) => `<div class="rule"><span>“${esc(r.match)}” → <strong>${esc(r.category)}</strong></span>
+      ? rules.map((r, i) => `<div class="rule"><span>“${esc(r.match)}” → ${icon(r.category)} <strong>${esc(r.category)}</strong></span>
           <button class="link-btn danger" data-rule="${i}">Delete</button></div>`).join('')
       : '<p class="muted small">No rules yet.</p>';
   }
@@ -252,8 +374,9 @@
   async function reload() {
     state.data = await api('/data');
     const sel = $('catFilter');
-    const cur = sel.value;
-    sel.innerHTML = '<option value="">All categories</option>' + state.data.categories.map((c) => `<option>${esc(c)}</option>`).join('');
+    const cur = state.filter;
+    sel.innerHTML = '<option value="">All categories</option>' +
+      state.data.categories.map((c) => `<option value="${esc(c)}">${icon(c)} ${esc(c)}</option>`).join('');
     sel.value = cur;
     render();
   }
@@ -264,7 +387,7 @@
     render();
     try {
       await post('/data', { action: 'setOverride', id, category });
-      toast(`Moved to ${category}.`, {
+      toast(`${icon(category)} Moved to ${category}`, {
         label: `Always for “${t.name}”`,
         run: () => addRule(t.name, category),
       });
@@ -276,7 +399,8 @@
       const { settings } = await post('/data', { action: 'addRule', match, category });
       state.data.settings = settings;
       render();
-      toast(`Rule saved: “${match}” → ${category}`);
+      const n = state.data.transactions.filter((t) => `${t.name} ${t.description}`.toLowerCase().includes(match.toLowerCase())).length;
+      toast(`Rule saved. ${n} transaction${n === 1 ? '' : 's'} now in ${category}.`);
     } catch (e) { toast(e.message); }
   }
 
@@ -394,8 +518,8 @@
         added += r.added; total += r.total;
       } catch (e) { toast(`${f.name}: ${e.message}`); return; }
     }
-    toast(`Imported ${added} new of ${total} rows.`);
     await reload();
+    toast(`Imported ${added} new of ${total} rows.`);
   }
 
   // ---------- lock / unlock ----------
@@ -411,7 +535,6 @@
     await reload();
     $('login').classList.add('hidden');
     $('app').classList.remove('hidden');
-    // Resume Chase OAuth if we were redirected back here
     const pending = localStorage.getItem('et_link_token');
     if (pending && new URLSearchParams(location.search).has('oauth_state_id')) {
       openLink(pending, window.location.href, localStorage.getItem('et_link_item'));
@@ -432,9 +555,10 @@
       state.password = '';
     }
   });
+  const goMonth = (m) => { state.month = m; state.limit = 60; render(); };
   $('logoutBtn').onclick = lock;
-  $('prevMonth').onclick = () => { state.month = shiftMonth(state.month, -1); render(); };
-  $('nextMonth').onclick = () => { if (state.month < ymNow()) { state.month = shiftMonth(state.month, 1); render(); } };
+  $('prevMonth').onclick = () => goMonth(shiftMonth(state.month, -1));
+  $('nextMonth').onclick = () => { if (state.month < ymNow()) goMonth(shiftMonth(state.month, 1)); };
   $('connectBtn').onclick = (e) => busy(e.currentTarget, () => connectBank());
   $('syncBtn').onclick = (e) => busy(e.currentTarget, async () => {
     if (!state.data.connections.length) return toast('No bank connected yet.');
@@ -444,8 +568,8 @@
   });
   $('importBtn').onclick = () => $('csvFile').click();
   $('csvFile').onchange = async (e) => { const files = [...e.target.files]; e.target.value = ''; if (files.length) await importFiles(files); };
-  $('search').oninput = (e) => { state.search = e.target.value; renderTxns(); };
-  $('catFilter').onchange = (e) => { state.filter = e.target.value; renderTxns(); };
+  $('search').oninput = (e) => { state.search = e.target.value; state.limit = 60; renderTxns(); };
+  $('catFilter').onchange = (e) => { state.filter = e.target.value; state.limit = 60; renderTxns(); };
   $('addBudgetCat').onchange = (e) => {
     const c = e.target.value; e.target.value = '';
     if (!c) return;
@@ -460,6 +584,15 @@
   });
 
   document.addEventListener('click', async (e) => {
+    const catEl = e.target.closest('[data-cat]');
+    if (catEl && catEl.dataset.cat !== 'Everything else') {
+      state.filter = catEl.dataset.cat; $('catFilter').value = state.filter; state.limit = 60; renderTxns();
+      $('txnList').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    const monthEl = e.target.closest('[data-month]');
+    if (monthEl) { goMonth(monthEl.dataset.month); return; }
+
     const el = e.target.closest('button');
     if (!el) return;
     try {

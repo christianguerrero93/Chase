@@ -2,9 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="robots" content="noindex, nofollow" />
-  <title>Expense Tracker</title>
+  <meta name="theme-color" content="#0b1d3a" />
+  <title>Ledger · Expense Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
   <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
 </head>
@@ -12,80 +16,100 @@
   <!-- Login -->
   <div id="login" class="login hidden">
     <form id="loginForm" class="login-card">
-      <h1>Expense Tracker</h1>
-      <p class="muted">Enter your site password</p>
+      <div class="logo">L</div>
+      <h1>Ledger</h1>
+      <p class="muted">Your spending, sorted. Enter your password to unlock.</p>
       <input id="pw" type="password" autocomplete="current-password" placeholder="Password" required />
-      <button class="btn primary" type="submit">Unlock</button>
+      <button class="btn primary block" type="submit">Unlock</button>
       <p id="loginErr" class="error"></p>
     </form>
   </div>
 
   <!-- App -->
   <div id="app" class="hidden">
-    <header class="topbar">
-      <div class="brand">Expense Tracker</div>
-      <div class="month-nav">
-        <button class="icon-btn" id="prevMonth" aria-label="Previous month">‹</button>
-        <span id="monthLabel"></span>
-        <button class="icon-btn" id="nextMonth" aria-label="Next month">›</button>
+    <section class="hero">
+      <div class="hero-inner">
+        <nav class="topbar">
+          <div class="brand"><span class="logo sm">L</span> Ledger</div>
+          <div class="actions">
+            <button class="btn glass" id="syncBtn">↻ Sync</button>
+            <button class="btn glass" id="importBtn">⬆ Import CSV</button>
+            <button class="btn white" id="connectBtn">Connect Chase</button>
+            <button class="btn ghost-light" id="logoutBtn" title="Lock">🔒</button>
+            <input type="file" id="csvFile" accept=".csv,.CSV" multiple hidden />
+          </div>
+        </nav>
+
+        <div class="hero-main">
+          <div>
+            <div class="month-nav">
+              <button class="icon-btn" id="prevMonth" aria-label="Previous month">‹</button>
+              <span id="monthLabel"></span>
+              <button class="icon-btn" id="nextMonth" aria-label="Next month">›</button>
+            </div>
+            <div class="hero-label">Spent this month</div>
+            <div class="hero-amount" id="heroSpent">$0</div>
+            <div class="hero-sub" id="heroSub"></div>
+          </div>
+          <div class="hero-meter" id="heroMeter"></div>
+        </div>
+
+        <div class="kpis" id="kpis"></div>
       </div>
-      <div class="actions">
-        <button class="btn" id="syncBtn">Sync</button>
-        <button class="btn" id="importBtn">Import CSV</button>
-        <button class="btn primary" id="connectBtn">Connect Chase</button>
-        <button class="btn ghost" id="logoutBtn" title="Lock">Lock</button>
-        <input type="file" id="csvFile" accept=".csv,.CSV" multiple hidden />
-      </div>
-    </header>
+    </section>
 
     <main>
-      <section class="kpis" id="kpis"></section>
+      <div id="review" class="review hidden"></div>
 
       <div class="grid">
         <section class="card">
-          <div class="card-head">
-            <h2>Budget by category</h2>
-            <select id="addBudgetCat" class="small-select"><option value="">+ Add budget</option></select>
+          <div class="card-head"><h2>Where it went</h2><span class="muted small" id="donutNote"></span></div>
+          <div class="donut-wrap">
+            <div id="donut" class="donut"></div>
+            <div id="legend" class="legend"></div>
           </div>
-          <div id="categories"></div>
         </section>
 
         <section class="card">
-          <div class="card-head"><h2>Last 6 months</h2></div>
+          <div class="card-head"><h2>6-month trend</h2><span class="muted small" id="avgNote"></span></div>
           <div id="trend" class="trend"></div>
-          <div class="card-head" style="margin-top:20px"><h2>Top merchants</h2></div>
+          <div class="card-head mt"><h2>Top merchants</h2></div>
           <div id="merchants"></div>
         </section>
       </div>
 
       <section class="card">
         <div class="card-head">
-          <h2>Transactions</h2>
+          <h2>Budgets</h2>
+          <select id="addBudgetCat" class="small-select"><option value="">+ Add a budget</option></select>
+        </div>
+        <div id="categories" class="budgets"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Transactions <span class="count" id="txnCount"></span></h2>
           <div class="filters">
-            <input id="search" type="search" placeholder="Search merchant…" />
+            <input id="search" type="search" placeholder="Search merchants" />
             <select id="catFilter"><option value="">All categories</option></select>
           </div>
         </div>
-        <div class="table-wrap">
-          <table class="txns">
-            <thead><tr><th>Date</th><th>Merchant</th><th>Account</th><th>Category</th><th class="num">Amount</th></tr></thead>
-            <tbody id="txnBody"></tbody>
-          </table>
-        </div>
-        <p id="txnEmpty" class="muted empty hidden">No transactions this month yet. Connect Chase or import a CSV to get started.</p>
+        <div id="txnList" class="txn-list"></div>
+        <p id="txnEmpty" class="muted empty hidden">No transactions here yet. Connect Chase or import a CSV to get started.</p>
       </section>
 
       <div class="grid">
         <section class="card">
-          <div class="card-head"><h2>Connected accounts</h2></div>
+          <div class="card-head"><h2>Accounts</h2></div>
           <div id="connections"></div>
         </section>
         <section class="card">
-          <div class="card-head"><h2>Auto-categorize rules</h2></div>
-          <p class="muted small">Rules apply to every transaction whose merchant contains the text. Create one by changing a category and tapping “Always”.</p>
+          <div class="card-head"><h2>Your rules</h2></div>
+          <p class="muted small">Recategorize a purchase and tap “Always” to create a rule for that merchant.</p>
           <div id="rules"></div>
         </section>
       </div>
+      <footer class="muted small">Categories come from a built-in directory of 870+ merchant names, your bank’s data, and your own rules.</footer>
     </main>
   </div>
 

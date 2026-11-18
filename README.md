@@ -104,8 +104,23 @@ npm install
 npm run dev              # http://localhost:8888 (uses npx netlify-cli)
 ```
 
+## How categories are chosen
+Every purchase goes through these steps, in order:
+1. **Your rules** ("Always" button) and one-off changes always win.
+2. **Card payments and transfers** are detected so they never count as spending.
+3. **Merchant directory** (`netlify/lib/merchants.js`): 870+ known merchant names
+   such as Starbucks, Con Ed, MTA, Equinox, Bilt.
+4. **Your bank's category** (Plaid, or the Category column in Chase card CSVs).
+5. **Chase transaction type** (ATM, Zelle, fees, loan payments) for checking exports.
+6. **Generic keywords** like "pizza", "pharmacy", "salon".
+7. Anything left goes to **Other**, and a banner on the dashboard lets you sort them.
+
+Categories are recalculated each time the dashboard loads, so directory updates
+also apply to transactions you already imported.
+
 ## Customizing
-- **Categories / auto-mapping:** `netlify/lib/categories.js`
+- **Merchant directory:** `netlify/lib/merchants.js` (add a name to any list)
+- **Categories / bank mapping:** `netlify/lib/categories.js`
 - **Excluded from spending:** `NON_SPENDING` in the same file
 - **Look and feel:** `public/styles.css`
 
