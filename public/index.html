@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Expense Tracker</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+</head>
+<body>
+  <!-- Login -->
+  <div id="login" class="login hidden">
+    <form id="loginForm" class="login-card">
+      <h1>Expense Tracker</h1>
+      <p class="muted">Enter your site password</p>
+      <input id="pw" type="password" autocomplete="current-password" placeholder="Password" required />
+      <button class="btn primary" type="submit">Unlock</button>
+      <p id="loginErr" class="error"></p>
+    </form>
+  </div>
+
+  <!-- App -->
+  <div id="app" class="hidden">
+    <header class="topbar">
+      <div class="brand">Expense Tracker</div>
+      <div class="month-nav">
+        <button class="icon-btn" id="prevMonth" aria-label="Previous month">‹</button>
+        <span id="monthLabel"></span>
+        <button class="icon-btn" id="nextMonth" aria-label="Next month">›</button>
+      </div>
+      <div class="actions">
+        <button class="btn" id="syncBtn">Sync</button>
+        <button class="btn" id="importBtn">Import CSV</button>
+        <button class="btn primary" id="connectBtn">Connect Chase</button>
+        <button class="btn ghost" id="logoutBtn" title="Lock">Lock</button>
+        <input type="file" id="csvFile" accept=".csv,.CSV" multiple hidden />
+      </div>
+    </header>
+
+    <main>
+      <section class="kpis" id="kpis"></section>
+
+      <div class="grid">
+        <section class="card">
+          <div class="card-head">
+            <h2>Budget by category</h2>
+            <select id="addBudgetCat" class="small-select"><option value="">+ Add budget</option></select>
+          </div>
+          <div id="categories"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head"><h2>Last 6 months</h2></div>
+          <div id="trend" class="trend"></div>
+          <div class="card-head" style="margin-top:20px"><h2>Top merchants</h2></div>
+          <div id="merchants"></div>
+        </section>
+      </div>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Transactions</h2>
+          <div class="filters">
+            <input id="search" type="search" placeholder="Search merchant…" />
+            <select id="catFilter"><option value="">All categories</option></select>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="txns">
+            <thead><tr><th>Date</th><th>Merchant</th><th>Account</th><th>Category</th><th class="num">Amount</th></tr></thead>
+            <tbody id="txnBody"></tbody>
+          </table>
+        </div>
+        <p id="txnEmpty" class="muted empty hidden">No transactions this month yet. Connect Chase or import a CSV to get started.</p>
+      </section>
+
+      <div class="grid">
+        <section class="card">
+          <div class="card-head"><h2>Connected accounts</h2></div>
+          <div id="connections"></div>
+        </section>
+        <section class="card">
+          <div class="card-head"><h2>Auto-categorize rules</h2></div>
+          <p class="muted small">Rules apply to every transaction whose merchant contains the text. Create one by changing a category and tapping “Always”.</p>
+          <div id="rules"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

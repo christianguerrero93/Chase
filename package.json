@@ -5,13 +5,10 @@
   "type": "module",
   "description": "Personal expense and budget tracker with Chase (via Plaid) and CSV import, hosted on Netlify.",
   "scripts": {
-    "dev": "netlify dev"
+    "dev": "npx netlify-cli dev"
   },
   "dependencies": {
     "@netlify/blobs": "^11.1.9",
     "plaid": "^51.0.0"
-  },
-  "devDependencies": {
-    "netlify-cli": "^23.0.0"
   }
 }

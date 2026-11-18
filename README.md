@@ -101,7 +101,7 @@ delete the CSV data from **Connected accounts** to avoid double counting.
 ```bash
 cp .env.example .env     # fill in values
 npm install
-npm run dev              # http://localhost:8888
+npm run dev              # http://localhost:8888 (uses npx netlify-cli)
 ```
 
 ## Customizing
